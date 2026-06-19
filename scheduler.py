@@ -59,6 +59,9 @@ def main() -> None:
     signal.signal(signal.SIGTERM, _handle_shutdown)
     signal.signal(signal.SIGINT, _handle_shutdown)
 
+    # Fail fast with a clear error if required env vars are missing.
+    config.validate()
+
     logger.info(
         "Scheduler starting — interval: every %d minute(s).",
         config.post_interval_minutes,

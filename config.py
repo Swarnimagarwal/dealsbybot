@@ -1,20 +1,28 @@
 """
 config.py — Central configuration loaded from environment variables.
 All tunable parameters live here; never hard-code them elsewhere.
+
+Required at runtime (bot will exit cleanly if missing):
+  BOT_TOKEN, CHANNEL_ID
+
+All others have sensible defaults.
 """
 
 import os
+import sys
 from dataclasses import dataclass, field
 
 
 @dataclass
 class Config:
     # ── Telegram ──────────────────────────────────────────────────────────────
+    # Use .get() so imports never crash in CI or test environments.
+    # validate() is called at actual bot startup to catch missing values early.
     bot_token: str = field(
-        default_factory=lambda: os.environ["BOT_TOKEN"]
+        default_factory=lambda: os.environ.get("BOT_TOKEN", "")
     )
     channel_id: str = field(
-        default_factory=lambda: os.environ["CHANNEL_ID"]
+        default_factory=lambda: os.environ.get("CHANNEL_ID", "")
     )
 
     # ── Amazon Affiliate ──────────────────────────────────────────────────────
@@ -63,6 +71,25 @@ class Config:
     amazon_domain: str = field(
         default_factory=lambda: os.environ.get("AMAZON_DOMAIN", "amazon.in")
     )
+
+    def validate(self) -> None:
+        """
+        Call once at bot startup (in scheduler.py main()).
+        Exits with a clear error message if required vars are missing,
+        rather than crashing with a confusing KeyError deep in the stack.
+        """
+        missing = []
+        if not self.bot_token:
+            missing.append("BOT_TOKEN")
+        if not self.channel_id:
+            missing.append("CHANNEL_ID")
+        if missing:
+            print(
+                f"[FATAL] Missing required environment variable(s): {', '.join(missing)}\n"
+                "Set them in Railway Variables (or your .env file) and redeploy.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
 
 # Singleton — import `config` everywhere instead of instantiating again.

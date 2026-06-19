@@ -1,0 +1,103 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-test:
+    name: Lint & Syntax Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Check syntax (py_compile)
+        run: |
+          python -m py_compile config.py
+          python -m py_compile logger.py
+          python -m py_compile affiliate.py
+          python -m py_compile database.py
+          python -m py_compile templates.py
+          python -m py_compile amazon_scraper.py
+          python -m py_compile bot.py
+          python -m py_compile scheduler.py
+          echo "All files compile cleanly."
+
+      - name: Run affiliate unit tests
+        run: |
+          python - <<'EOF'
+          from affiliate import generate_affiliate_link, sanitise_url
+
+          # Test 1: bare URL gets tag appended
+          result = generate_affiliate_link("https://amazon.in/dp/B0TEST12345")
+          assert "tag=dealify01-21" in result, f"Missing tag: {result}"
+
+          # Test 2: existing tag replaced
+          result = generate_affiliate_link("https://amazon.in/dp/B0TEST12345?tag=oldtag")
+          assert "tag=dealify01-21" in result, f"Tag not replaced: {result}"
+          assert "tag=oldtag" not in result, f"Old tag still present: {result}"
+
+          # Test 3: non-Amazon URL returned unchanged
+          result = generate_affiliate_link("https://example.com/product")
+          assert result == "https://example.com/product", f"Non-Amazon URL modified: {result}"
+
+          print("All affiliate tests passed.")
+          EOF
+
+      - name: Run template smoke test
+        run: |
+          python - <<'EOF'
+          from templates import Deal, format_message
+          deal = Deal(
+              title="Test Product XYZ",
+              price=999.0,
+              original_price=1999.0,
+              discount_percent=50.0,
+              rating=4.5,
+              review_count=2500,
+              affiliate_link="https://amazon.in/dp/B0TEST12345?tag=dealify01-21",
+              image_url="https://m.media-amazon.com/images/test.jpg",
+          )
+          # Run 10 times to hit multiple templates
+          for _ in range(10):
+              msg = format_message(deal)
+              assert len(msg) > 50, "Template output too short"
+              assert "amazon.in" in msg, "Affiliate link missing from message"
+          print("Template smoke test passed.")
+          EOF
+
+      - name: Run database unit tests
+        run: |
+          python - <<'EOF'
+          import os, tempfile
+          os.environ["DB_PATH"] = tempfile.mktemp(suffix=".db")
+
+          from database import init_db, save_posted_deal, is_duplicate, cleanup_old_records
+
+          init_db()
+
+          # Not a duplicate before saving
+          assert not is_duplicate("B0TEST12345"), "Should not be duplicate before saving"
+
+          save_posted_deal("B0TEST12345", "Test Product", 999.0, 50.0)
+
+          # Should be a duplicate now
+          assert is_duplicate("B0TEST12345"), "Should be duplicate after saving"
+
+          count = cleanup_old_records()
+          print(f"Cleanup removed {count} records (expected 0 since record is recent).")
+          print("Database tests passed.")
+          EOF

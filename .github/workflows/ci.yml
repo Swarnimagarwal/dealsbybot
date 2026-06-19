@@ -11,6 +11,13 @@ jobs:
     name: Lint & Syntax Check
     runs-on: ubuntu-latest
 
+    # Dummy values so config.py doesn't exit during import in tests.
+    # Real secrets are never stored here.
+    env:
+      BOT_TOKEN: "test_token_for_ci"
+      CHANNEL_ID: "@test_channel"
+      AMAZON_AFFILIATE_ID: "dealify01-21"
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -71,7 +78,6 @@ jobs:
               affiliate_link="https://amazon.in/dp/B0TEST12345?tag=dealify01-21",
               image_url="https://m.media-amazon.com/images/test.jpg",
           )
-          # Run 10 times to hit multiple templates
           for _ in range(10):
               msg = format_message(deal)
               assert len(msg) > 50, "Template output too short"
@@ -83,21 +89,19 @@ jobs:
         run: |
           python - <<'EOF'
           import os, tempfile
+
+          # Set DB_PATH before any imports so the config singleton picks it up
           os.environ["DB_PATH"] = tempfile.mktemp(suffix=".db")
 
           from database import init_db, save_posted_deal, is_duplicate, cleanup_old_records
 
           init_db()
 
-          # Not a duplicate before saving
           assert not is_duplicate("B0TEST12345"), "Should not be duplicate before saving"
-
           save_posted_deal("B0TEST12345", "Test Product", 999.0, 50.0)
-
-          # Should be a duplicate now
           assert is_duplicate("B0TEST12345"), "Should be duplicate after saving"
 
           count = cleanup_old_records()
-          print(f"Cleanup removed {count} records (expected 0 since record is recent).")
+          print(f"Cleanup removed {count} records (expected 0 — record is recent).")
           print("Database tests passed.")
           EOF
